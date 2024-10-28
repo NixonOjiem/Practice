@@ -95,4 +95,44 @@ describe user_data;
 
 select * FROM trial_db.user_data;
 
+-- MySQL dump 10.13  Distrib 8.0.37, for Linux (x86_64)
+--
+-- Host: localhost    Database: openmrs
+-- ------------------------------------------------------
+-- Server version	8.0.37-0ubuntu0.20.04.3
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+
+DROP TABLE IF EXISTS `address_hierarchy_entry`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `address_hierarchy_entry` (
+  `address_hierarchy_entry_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(160) DEFAULT NULL,
+  `level_id` int NOT NULL,
+  `parent_id` int DEFAULT NULL,
+  `user_generated_id` varchar(11) DEFAULT NULL,
+  `latitude` double DEFAULT NULL,
+  `longitude` double DEFAULT NULL,
+  `elevation` double DEFAULT NULL,
+  `uuid` char(38) NOT NULL,
+  PRIMARY KEY (`address_hierarchy_entry_id`),
+  KEY `address_hierarchy_entry_name_idx` (`name`),
+  KEY `level_name` (`level_id`,`name`),
+  KEY `parent_name` (`parent_id`,`name`),
+  CONSTRAINT `level_to_level` FOREIGN KEY (`level_id`) REFERENCES `address_hierarchy_level` (`address_hierarchy_level_id`),
+  CONSTRAINT `parent-to-parent` FOREIGN KEY (`parent_id`) REFERENCES `address_hierarchy_entry` (`address_hierarchy_entry_id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=7149 DEFAULT CHARSET=latin1;
+
 
