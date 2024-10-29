@@ -136,3 +136,13 @@ CREATE TABLE `address_hierarchy_entry` (
 ) ENGINE=InnoDB AUTO_INCREMENT=7149 DEFAULT CHARSET=latin1;
 
 
+# SELECT patient_appointment_id, start_date_time, end_date_time, status, appointment_kind, date_appointment_scheduled FROM openmrs.patient_appointment WHERE status LIKE 'Missed';
+
+SELECT name, start_time, date_created FROM openmrs.appointment_service;
+
+SELECT * FROM openmrs.drug;
+
+SELECT concept_id  FROM openmrs.orders WHERE order_id=112979;
+
+
+
