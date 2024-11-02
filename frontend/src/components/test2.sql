@@ -23,3 +23,15 @@ DESCRIBE location_data;
 SELECT * FROM test_database.location_data;
 
 SELECT location_name FROM test_database.location_data;
+
+DROP TABLE IF EXISTS `appframework_component_state`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `appframework_component_state` (
+  `component_state_id` int NOT NULL AUTO_INCREMENT,
+  `uuid` char(38) NOT NULL,
+  `component_id` varchar(255) NOT NULL,
+  `component_type` varchar(50) NOT NULL,
+  `enabled` tinyint(1) DEFAULT NULL,
+  PRIMARY KEY (`component_state_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
