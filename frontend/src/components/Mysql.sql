@@ -146,3 +146,30 @@ SELECT concept_id  FROM openmrs.orders WHERE order_id=112979;
 
 
 
+DROP TABLE IF EXISTS `care_setting`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `care_setting` (
+  `care_setting_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `care_setting_type` varchar(50) NOT NULL,
+  `creator` int NOT NULL,
+  `date_created` datetime NOT NULL,
+  `retired` tinyint(1) NOT NULL DEFAULT '0',
+  `retired_by` int DEFAULT NULL,
+  `date_retired` datetime DEFAULT NULL,
+  `retire_reason` varchar(255) DEFAULT NULL,
+  `changed_by` int DEFAULT NULL,
+  `date_changed` datetime DEFAULT NULL,
+  `uuid` char(38) NOT NULL,
+  PRIMARY KEY (`care_setting_id`),
+  UNIQUE KEY `name` (`name`),
+  UNIQUE KEY `uuid` (`uuid`),
+  KEY `care_setting_creator` (`creator`),
+  KEY `care_setting_retired_by` (`retired_by`),
+  KEY `care_setting_changed_by` (`changed_by`),
+  CONSTRAINT `care_setting_changed_by` FOREIGN KEY (`changed_by`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `care_setting_creator` FOREIGN KEY (`creator`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `care_setting_retired_by` FOREIGN KEY (`retired_by`) REFERENCES `users` (`user_id`)
+)
