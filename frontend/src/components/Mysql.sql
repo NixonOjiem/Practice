@@ -173,3 +173,55 @@ CREATE TABLE `care_setting` (
   CONSTRAINT `care_setting_creator` FOREIGN KEY (`creator`) REFERENCES `users` (`user_id`),
   CONSTRAINT `care_setting_retired_by` FOREIGN KEY (`retired_by`) REFERENCES `users` (`user_id`)
 )
+
+LOCK TABLES `care_setting` WRITE;
+/*!40000 ALTER TABLE `care_setting` DISABLE KEYS */;
+INSERT INTO `care_setting` VALUES (1,'Outpatient','Out-patient care setting','OUTPATIENT',1,'2013-12-27 00:00:00',0,NULL,NULL,NULL,NULL,NULL,'6f0c9a92-6f24-11e3-af88-005056821db0'),(2,'Inpatient','In-patient care setting','INPATIENT',1,'2013-12-27 00:00:00',0,NULL,NULL,NULL,NULL,NULL,'c365e560-c3ec-11e3-9c1a-0800200c9a66');
+/*!40000 ALTER TABLE `care_setting` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `cashier_bill`
+--
+
+DROP TABLE IF EXISTS `cashier_bill`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cashier_bill` (
+  `bill_id` int NOT NULL AUTO_INCREMENT,
+  `receipt_number` varchar(255) DEFAULT NULL,
+  `provider_id` int NOT NULL,
+  `patient_id` int NOT NULL,
+  `cash_point_id` int NOT NULL,
+  `adjusted_bill_id` int DEFAULT NULL,
+  `creator` int NOT NULL,
+  `date_created` datetime NOT NULL,
+  `changed_by` int DEFAULT NULL,
+  `date_changed` datetime DEFAULT NULL,
+  `voided` tinyint(1) NOT NULL DEFAULT '0',
+  `voided_by` int DEFAULT NULL,
+  `date_voided` datetime DEFAULT NULL,
+  `void_reason` varchar(255) DEFAULT NULL,
+  `uuid` char(38) NOT NULL,
+  `receipt_printed` tinyint(1) NOT NULL DEFAULT '0',
+  `adjustment_reason` varchar(500) DEFAULT NULL,
+  `status` varchar(10) NOT NULL,
+  PRIMARY KEY (`bill_id`),
+  UNIQUE KEY `uuid` (`uuid`),
+  UNIQUE KEY `cashier_bill_receipt_number_idx` (`receipt_number`),
+  KEY `cashier_bill_patient_id_idx` (`patient_id`),
+  KEY `cashier_bill_provider_fk` (`provider_id`),
+  KEY `cashier_bill_cash_point_fk` (`cash_point_id`),
+  KEY `cashier_bill_creator_fk` (`creator`),
+  KEY `cashier_bill_changed_by_fk` (`changed_by`),
+  KEY `cashier_bill_voided_by_fk` (`voided_by`),
+  KEY `cashier_bill_adjusted_bill_fk` (`adjusted_bill_id`),
+  KEY `cashier_date_created` (`date_created`),
+  CONSTRAINT `cashier_bill_adjusted_bill_fk` FOREIGN KEY (`adjusted_bill_id`) REFERENCES `cashier_bill` (`bill_id`),
+  CONSTRAINT `cashier_bill_cash_point_fk` FOREIGN KEY (`cash_point_id`) REFERENCES `cashier_cash_point` (`cash_point_id`),
+  CONSTRAINT `cashier_bill_changed_by_fk` FOREIGN KEY (`changed_by`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `cashier_bill_creator_fk` FOREIGN KEY (`creator`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `cashier_bill_patient_fk` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`),
+  CONSTRAINT `cashier_bill_provider_fk` FOREIGN KEY (`provider_id`) REFERENCES `provider` (`provider_id`),
+  CONSTRAINT `cashier_bill_voided_by_fk` FOREIGN KEY (`voided_by`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
