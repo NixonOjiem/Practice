@@ -225,3 +225,388 @@ CREATE TABLE `cashier_bill` (
   CONSTRAINT `cashier_bill_provider_fk` FOREIGN KEY (`provider_id`) REFERENCES `provider` (`provider_id`),
   CONSTRAINT `cashier_bill_voided_by_fk` FOREIGN KEY (`voided_by`) REFERENCES `users` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+use openmrs;
+set @reportingdate = '2024-10-30';
+SELECT * FROM(
+		SELECT
+			-- (SELECT facilityname FROM chsemrdata.ml_facilitydatabases where databasename = 'openmrs') AS facilityname,
+			-- (SELECT mflcode FROM chsemrdata.ml_facilitydatabases where databasename = 'openmrs') AS mflcode,
+			identifier as cccnumber,activeclients.person_id as patientid,
+			CASE WHEN activeclients.NextAppointmentDate < DATE_ADD(@reportingdate, INTERVAL 1 DAY) THEN 'defaulter' else 'active' end as txcurrstatus,
+			CASE WHEN activeclients.NextAppointmentDate < DATE_ADD(@reportingdate, INTERVAL 1 DAY) THEN 
+				DATEDIFF(DATE_ADD(@reportingdate, INTERVAL 1 DAY), activeclients.NextAppointmentDate) ELSE 0 end as daysdefaulted,
+				case when exits.ExitReason = 'Transferred out' and exits.effective_discontinuation_date > @reportingdate then exits.ExitReason end as ExitReason,
+				exits.effective_discontinuation_date,
+                exits.effective_discontinuation_date as transferverificationdate
+               -- ,'',reportingperiod,'','',reportingfrequency,''
+			FROM(
+			SELECT * FROM(
+				SELECT row_number() over (PARTITION BY t.person_id ORDER BY t.person_id asc,t.LastVisitDate DESC) AS rownumber
+				   ,t.*
+				FROM (
+					select appointments.patient_id as person_id,visits.date_started as LastVisitDate,upcomingappointments.start_date_time as NextAppointmentDate, 
+					DATE_ADD(upcomingappointments.start_date_time, INTERVAL 30 DAY) as defaultingday,
+					upcomingappointments.start_date_time as upcomingappointment,DATE_ADD(upcomingappointments.start_date_time, INTERVAL 30 DAY) as dday
+					from(
+						SELECT * FROM(
+							SELECT row_number() over (PARTITION BY t.patient_id ORDER BY t.patient_id asc,t.start_date_time DESC) AS rownumber
+						   ,t.*
+						FROM (
+							select * from openmrs.patient_appointment where cast(date_appointment_scheduled as date) <= @reportingdate
+                            and status != 'Cancelled'
+						) t
+						)returndates 
+						where rownumber = 1
+					)appointments
+					left join(
+						SELECT * FROM(
+							SELECT row_number() over (PARTITION BY t.patient_id ORDER BY t.patient_id asc,t.date_started DESC) AS rownumber
+						   ,t.*
+							FROM (
+								select * from openmrs.visit where date_started < @reportingdate
+							) t
+						)returndates where rownumber = 1
+					)visits on appointments.patient_id = visits.patient_id
+					left join(
+						SELECT * FROM(
+							SELECT row_number() over (PARTITION BY t.patient_id ORDER BY t.patient_id asc,t.start_date_time ASC) AS rownumber
+						   ,t.*
+						FROM (
+							select * from openmrs.patient_appointment where start_date_time > DATE_ADD(@reportingdate, INTERVAL 1 DAY)
+							and appointment_service_id = 1
+						) t
+						)returndates 
+						where rownumber = 1
+					)upcomingappointments on upcomingappointments.patient_id = appointments.patient_id
+					where (
+					DATE_ADD(upcomingappointments.start_date_time, INTERVAL 30 DAY) >= @reportingdate
+					OR DATE_ADD(appointments.start_date_time, INTERVAL 30 DAY) >= @reportingdate)
+				) t
+				)appointments WHERE rownumber = 1
+			)activeclients LEFT JOIN(
+				SELECT patient_id,ExitDate,ExitReason,effective_discontinuation_date,to_facility,program_name AS ExitedFrom FROM(
+						SELECT row_number() over (PARTITION BY t.patient_id ORDER BY t.patient_id asc,t.encounter_datetime DESC) AS rownumber,t.patient_id
+						   ,t.encounter_datetime AS ExitDate, t.program_name,t.name AS ExitReason,t.to_facility,t.effective_discontinuation_date
+						FROM (
+							SELECT pd.patient_id,pd.encounter_datetime,pd.program_name,effective_discontinuation_date,cn.name,pd.to_facility FROM(
+						select 
+							e.patient_id,
+							e.uuid,
+							e.visit_id,
+							e.encounter_datetime,
+							 -- et.uuid,
+							(case et.uuid
+								when '2bdada65-4c72-4a48-8730-859890e25cee' then 'HIV'
+								when 'd3e3d723-7458-4b4e-8998-408e8a551a84' then 'TB'
+								when '01894f88-dc73-42d4-97a3-0929118403fb' then 'MCH Child HEI'
+								when '5feee3f1-aa16-4513-8bd0-5d9b27ef1208' then 'MCH Child'
+								when '7c426cfc-3b47-4481-b55f-89860c21c7de' then 'MCH Mother'
+								when '162382b8-0464-11ea-9a9f-362b9e155667' then 'OTZ'
+								when '5cf00d9e-09da-11ea-8d71-362b9e155667' then 'OVC'
+								when 'd7142400-2495-11e9-ab14-d663bd873d93' then 'KP'
+							end) as program_name,
+							e.encounter_id,
+							max(if(o.concept_id=161555, o.value_coded, null)) as reason_discontinued,
+							max(if(o.concept_id=164384, o.value_datetime, null)) as effective_discontinuation_date,
+							max(if(o.concept_id=164384, o.value_datetime, null)) as visit_date,
+							max(if(o.concept_id=1285, o.value_coded, null)) as trf_out_verified,
+							max(if(o.concept_id=164133, o.value_datetime, null)) as trf_out_verification_date,
+							max(if(o.concept_id=1543, o.value_datetime, null)) as date_died,
+							max(if(o.concept_id=159495, left(trim(o.value_text),100), null)) as to_facility,
+							max(if(o.concept_id=160649, o.value_datetime, null)) as to_date
+							from  openmrs.encounter e
+							inner join  openmrs.person p on p.person_id=e.patient_id and p.voided=0
+							inner join  openmrs.obs o on o.encounter_id=e.encounter_id and o.voided=0 and o.concept_id in (161555,164384,1543,159495,160649,165380,1285,164133)
+							inner join 
+							(
+								select encounter_type_id, uuid, name from  openmrs.encounter_type where 
+								uuid in('2bdada65-4c72-4a48-8730-859890e25cee','d3e3d723-7458-4b4e-8998-408e8a551a84','5feee3f1-aa16-4513-8bd0-5d9b27ef1208',
+								'7c426cfc-3b47-4481-b55f-89860c21c7de','01894f88-dc73-42d4-97a3-0929118403fb','162382b8-0464-11ea-9a9f-362b9e155667','5cf00d9e-09da-11ea-8d71-362b9e155667','d7142400-2495-11e9-ab14-d663bd873d93')
+							) et on et.encounter_type_id=e.encounter_type
+							WHERE e.encounter_datetime < DATE_ADD(@reportingdate, INTERVAL 1 DAY)
+							group by e.encounter_id
+						)pd LEFT JOIN (
+							SELECT * FROM openmrs.concept_name WHERE locale = 'en'
+						) cn ON pd.reason_discontinued = cn.concept_id
+						WHERE pd.program_name = 'HIV'
+						) t
+				)exits WHERE rownumber = 1 and ExitReason IN ('Transferred out','Died','Lost to followup') and program_name = 'HIV'
+			)exits ON activeclients.person_id = exits.patient_id 
+			LEFT JOIN(
+				SELECT * FROM(
+					SELECT row_number() over (PARTITION BY t.patient_id ORDER BY t.patient_id ASC,t.encounter_datetime ASC) AS rownumber,t.patient_id
+				   ,t.identifier,t.encounter_datetime,t.program, t.regimen,t.regimen_name,t.regimen_line,t.value_coded
+					FROM (SELECT * FROM(
+					SELECT pids.identifier,regimens.patient_id,regimens.encounter_datetime,regimens.program,regimens.value_coded,
+					CASE WHEN regimens.regimen = '' and unstandardregimens.regimen = '' THEN NULL 
+					WHEN regimens.regimen IS NOT NULL THEN regimens.regimen 
+					WHEN unstandardregimens.regimen IS NOT NULL THEN unstandardregimens.regimen 
+					ELSE regimens.regimen
+					END AS regimen,
+					CASE WHEN regimens.regimen_name = '' THEN NULL ELSE regimens.regimen_name END AS regimen_name,
+					CASE WHEN regimens.regimen_line = '' THEN NULL ELSE regimens.regimen_line END AS regimen_line
+					FROM(
+						select
+								e.uuid,
+								e.patient_id,
+								e.encounter_datetime,
+								-- e.encounter_datetime,
+								e.creator,
+								e.encounter_id,
+								o.value_coded,
+								max(if(o.concept_id=1255,'HIV',if(o.concept_id=1268, 'TB', null))) as program,
+								max(if(o.concept_id=1193,(
+									case o.value_coded
+									when 162565 then "3TC/NVP/TDF"
+									when 164505 then "TDF/3TC/EFV"
+									when 1652 then "AZT/3TC/NVP"
+									when 160124 then "AZT/3TC/EFV"
+									when 792 then "D4T/3TC/NVP"
+									when 160104 then "D4T/3TC/EFV"
+									when 164971 then "TDF/3TC/AZT"
+									when 165357 then "ABC/3TC/ATV/r"
+									when 164968 then "AZT/3TC/DTG"
+									when 164969 then "TDF/3TC/DTG"
+									when 164970 then "ABC/3TC/DTG"
+									when 162561 then "AZT/3TC/LPV/r"
+									when 164511 then "AZT/3TC/ATV/r"
+									when 162201 then "TDF/3TC/LPV/r"
+									when 1067 then "Unknown"
+									when 164512 then "TDF/3TC/ATV/r"
+									when 162560 then "D4T/3TC/LPV/r"
+									when 164972 then "AZT/TDF/3TC/LPV/r"
+									when 164973 then "ETR/RAL/DRV/RTV"
+									when 164974 then "ETR/TDF/3TC/LPV/r"
+									when 162200 then "ABC/3TC/LPV/r"
+									when 162199 then "ABC/3TC/NVP"
+									when 162563 then "ABC/3TC/EFV"
+									when 817 then "AZT/3TC/ABC"
+									when 164975 then "D4T/3TC/ABC"
+									when 162562 then "TDF/ABC/LPV/r"
+									when 162559 then "ABC/DDI/LPV/r"
+									when 164976 then "ABC/TDF/3TC/LPV/r"
+									when 165375 then "RAL+3TC+DRV+RTV"
+									when 165376 then "RAL+3TC+DRV+RTV+AZT"
+									when 165377 then "RAL+3TC+DRV+RTV+ABC"
+									when 165378 then "ETV+3TC+DRV+RTV"
+									when 165379 then "RAL+3TC+DRV+RTV+TDF"
+									when 165369 then "TDF+3TC+DTG+DRV/r"
+									when 165370 then "TDF+3TC+RAL+DRV/r"
+									when 165371 then "TDF+3TC+DTG+EFV+DRV/r"
+									when 165372 then "ABC+3TC+RAL"
+									when 165373 then "AZT+3TC+RAL+DRV/r"
+									when 165374 then "ABC+3TC+RAL+DRV/r"
+									when 1675 then "RHZE"
+									when 768 then "RHZ"
+									when 1674 then "SRHZE"
+									when 164978 then "RfbHZE"
+									when 164979 then "RfbHZ"
+									when 164980 then "SRfbHZE"
+									when 84360 then "S (1 gm vial)"
+									when 75948 then "E"
+									when 1194 then "RH"
+									when 159851 then "RHE"
+									when 1108 then "EH"
+									else o.value_coded
+									end ),null)) as regimen,
+								max(if(o.concept_id=1193,(
+									case o.value_coded
+									when 162565 then "3TC+NVP+TDF"
+									when 164505 then "TDF+3TC+EFV"
+									when 1652 then "AZT+3TC+NVP"
+									when 160124 then "AZT+3TC+EFV"
+									when 792 then "D4T+3TC+NVP"
+									when 160104 then "D4T+3TC+EFV"
+									when 164971 then "TDF+3TC+AZT"
+									when 164968 then "AZT+3TC+DTG"
+									when 1067 then "Unknown"
+									when 164969 then "TDF+3TC+DTG"
+									when 164970 then "ABC+3TC+DTG"
+									when 162561 then "AZT+3TC+LPV/r"
+									when 164511 then "AZT+3TC+ATV/r"
+									when 162201 then "TDF+3TC+LPV/r"
+									when 165357 then "ABC/3TC/ATV/r"
+									when 164512 then "TDF+3TC+ATV/r"
+									when 162560 then "D4T+3TC+LPV/r"
+									when 164972 then "AZT+TDF+3TC+LPV/r"
+									when 164973 then "ETR+RAL+DRV+RTV"
+									when 164974 then "ETR+TDF+3TC+LPV/r"
+									when 162200 then "ABC+3TC+LPV/r"
+									when 162199 then "ABC+3TC+NVP"
+									when 162563 then "ABC+3TC+EFV"
+									when 817 then "AZT+3TC+ABC"
+									when 164975 then "D4T+3TC+ABC"
+									when 162562 then "TDF+ABC+LPV/r"
+									when 162559 then "ABC+DDI+LPV/r"
+									when 164976 then "ABC+TDF+3TC+LPV/r"
+									when 165375 then "RAL+3TC+DRV+RTV"
+									when 165376 then "RAL+3TC+DRV+RTV+AZT"
+									when 165377 then "RAL+3TC+DRV+RTV+ABC"
+									when 165378 then "ETV+3TC+DRV+RTV"
+									when 165379 then "RAL+3TC+DRV+RTV+TDF"
+									when 165369 then "TDF+3TC+DTG+DRV/r"
+									when 165370 then "TDF+3TC+RAL+DRV/r"
+									when 165371 then "TDF+3TC+DTG+EFV+DRV/r"
+									when 165372 then "ABC+3TC+RAL"
+									when 165373 then "AZT+3TC+RAL+DRV/r"
+									when 165374 then "ABC+3TC+RAL+DRV/r"
+									when 1675 then "RHZE"
+									when 768 then "RHZ"
+									when 1674 then "SRHZE"
+									when 164978 then "RfbHZE"
+									when 164979 then "RfbHZ"
+									when 164980 then "SRfbHZE"
+									when 84360 then "S (1 gm vial)"
+									when 75948 then "E"
+									when 1194 then "RH"
+									when 159851 then "RHE"
+									when 1108 then "EH"
+									else ""
+									end ),null)) as regimen_name,
+								max(if(o.concept_id=1193,(
+									case o.value_coded
+									when 162565 then "First line"
+									when 164505 then "First line"
+									when 1652 then "First line"
+									when 160124 then "First line"
+									when 792 then "First line"
+									when 160104 then "First line"
+									when 164971 then "First line"
+									when 164968 then "First line"
+									when 164969 then "First line"
+									when 164970 then "First line"
+									when 162561 then "First line"
+									when 164511 then "First line"
+									when 164512 then "First line"
+									when 162201 then "First line"
+									when 162561 then "Second line"
+									when 164511 then "Second line"
+									when 162201 then "Second line"
+									when 164512 then "Second line"
+									when 162560 then "Second line"
+									when 164972 then "Second line"
+									when 164973 then "Second line"
+									when 164974 then "Second line"
+									when 165357 then "Second line"
+									when 164968 then "Second line"
+									when 164969 then "Second line"
+									when 164970 then "Second line"
+									when 165375 then "Third line"
+									when 165376 then "Third line"
+									when 165379 then "Third line"
+									when 165378 then "Third line"
+									when 165369 then "Third line"
+									when 165370 then "Third line"
+									when 165371 then "Third line"
+									when 162200 then "First line"
+									when 162199 then "First line"
+									when 162563 then "First line"
+									when 817 then "First line"
+									when 164975 then "First line"
+									when 162562 then "First line"
+									when 162559 then "First line"
+									when 164976 then "First line"
+									when 165372 then "First line"
+									when 162561 then "Second line"
+									when 164511 then "Second line"
+									when 162200 then "Second line"
+									when 165357 then "Second line"
+									when 165373 then "Second line"
+									when 165374 then "Second line"
+									when 165375 then "Third line"
+									when 165376 then "Third line"
+									when 165377 then "Third line"
+									when 165378 then "Third line"
+									when 165373 then "Third line"
+									when 165374 then "Third line"
+									when 1675 then "Adult intensive"
+									when 768 then "Adult intensive"
+									when 1674 then "Adult intensive"
+									when 164978 then "Adult intensive"
+									when 164979 then "Adult intensive"
+									when 164980 then "Adult intensive"
+									when 84360 then "Adult intensive"
+									when 75948 then "Child intensive"
+									when 1194 then "Child intensive"
+									when 159851 then "Adult continuation"
+									when 1108 then "Adult continuation"
+									else ""
+									end ),null)) as regimen_line,
+								max(if(o.concept_id=1191,(case o.value_datetime when NULL then 0 else 1 end),null)) as discontinued,
+								null as regimen_discontinued,
+								max(if(o.concept_id=1191,o.value_datetime,null)) as date_discontinued,
+								max(if(o.concept_id=1252,o.value_coded,null)) as reason_discontinued,
+								max(if(o.concept_id=5622,o.value_text,null)) as reason_discontinued_other
+
+							from  openmrs.encounter e
+								inner join  openmrs.person p on p.person_id=e.patient_id and p.voided=0
+								inner join  openmrs.obs o on e.encounter_id = o.encounter_id and o.voided =0
+																		and o.concept_id in(1193,1252,5622,1191,1255,1268)
+								inner join
+								(
+									select encounter_type, uuid,name from  openmrs.form where
+										uuid in('da687480-e197-11e8-9f32-f2801f1b9fd1')
+								) f on f.encounter_type=e.encounter_type 
+						WHERE e.encounter_datetime < DATE_ADD(@reportingdate, INTERVAL 1 DAY)
+						group by e.encounter_id,o.value_coded
+					)regimens 
+					left join(
+						select firstregimen.person_id,firstregimen.obs_datetime,
+							case when secondregimen.drugname IS NOT NULL and thirdregimen.drugname IS NOT NULL THEN CONCAT(firstregimen.drugname,'/',secondregimen.drugname,'/',thirdregimen.drugname)
+							when secondregimen.drugname IS NOT NULL and thirdregimen.drugname IS NULL THEN CONCAT(firstregimen.drugname,'/',secondregimen.drugname)
+							else firstregimen.drugname end as regimen from(
+								SELECT * FROM(
+								SELECT row_number() over (PARTITION BY t.person_id ORDER BY t.person_id asc,t.obs_datetime DESC) AS rownumber
+									   ,t.*
+									FROM (
+										select o.person_id,o.obs_datetime,o.value_coded,cn.name as drugname from openmrs.obs o left join 
+										(select * from openmrs.concept_name where locale = 'en' and concept_name_type='FULLY_SPECIFIED')cn
+										on o.value_coded = cn.concept_id
+										where o.concept_id = 1088
+									) t
+								)alldata WHERE rownumber = 1
+							)firstregimen 
+							left join(
+								SELECT * FROM(
+								SELECT row_number() over (PARTITION BY t.person_id ORDER BY t.person_id asc,t.obs_datetime DESC) AS rownumber
+									   ,t.*
+									FROM (
+										select o.person_id,o.obs_datetime,o.value_coded,cn.name as drugname from openmrs.obs o left join 
+										(select * from openmrs.concept_name where locale = 'en' and concept_name_type='FULLY_SPECIFIED')cn
+										on o.value_coded = cn.concept_id
+										where o.concept_id = 1088
+									) t
+								)alldata WHERE rownumber = 2
+							)secondregimen on firstregimen.person_id = secondregimen.person_id and firstregimen.obs_datetime = secondregimen.obs_datetime
+							left join(
+								SELECT * FROM(
+								SELECT row_number() over (PARTITION BY t.person_id ORDER BY t.person_id asc,t.obs_datetime DESC) AS rownumber
+									   ,t.*
+									FROM (
+										select o.person_id,o.obs_datetime,o.value_coded,cn.name as drugname from openmrs.obs o left join 
+										(select * from openmrs.concept_name where locale = 'en' and concept_name_type='FULLY_SPECIFIED')cn
+										on o.value_coded = cn.concept_id
+										where o.concept_id = 1088
+									) t
+								)alldata WHERE rownumber = 3
+							)thirdregimen on firstregimen.person_id = thirdregimen.person_id and firstregimen.obs_datetime = thirdregimen.obs_datetime
+					)unstandardregimens on unstandardregimens.person_id = regimens.patient_id
+					LEFT JOIN(
+						SELECT * FROM  openmrs.patient_identifier WHERE identifier_type = 
+                        (select patient_identifier_type_id from patient_identifier_type where name = 'Unique Patient Number')
+					)pids ON pids.patient_id = regimens.patient_id
+					)regimendetails WHERE regimen IS NOT null 
+					and regimen not in ('RHZE','RHZ','SRHZE','RfbHZE','RfbHZ','SRfbHZE','S (1 gm vial)','E','RHE','EH')
+					GROUP BY patient_id, encounter_datetime,identifier,program,regimen,regimen_name,regimen_line,value_coded
+                    ORDER BY encounter_datetime
+					) t
+					)reg  where rownumber = 1
+			)artstatus ON artstatus.patient_id = activeclients.person_id
+			WHERE 
+			(exits.patient_id IS NULL or (exits.patient_id IS NOT NULL 
+			and ExitDate < activeclients.LastVisitDate)
+			OR (exits.ExitReason = 'Transferred out' and exits.effective_discontinuation_date > @reportingdate))
+			and artstatus.encounter_datetime IS NOT NULL
+            and identifier is not null
+			ORDER BY activeclients.person_id ASC)alldata
