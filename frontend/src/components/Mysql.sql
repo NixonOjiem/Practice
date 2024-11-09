@@ -610,3 +610,42 @@ SELECT * FROM(
 			and artstatus.encounter_datetime IS NOT NULL
             and identifier is not null
 			ORDER BY activeclients.person_id ASC)alldata
+
+			CREATE TABLE `cashier_bill_line_item` (
+  `bill_line_item_id` int NOT NULL AUTO_INCREMENT,
+  `bill_id` int NOT NULL,
+  `item_id` int DEFAULT NULL,
+  `price` decimal(10,2) NOT NULL,
+  `price_name` varchar(255) DEFAULT NULL,
+  `quantity` int NOT NULL,
+  `line_item_order` int NOT NULL,
+  `creator` int NOT NULL,
+  `date_created` datetime NOT NULL,
+  `changed_by` int DEFAULT NULL,
+  `date_changed` datetime DEFAULT NULL,
+  `voided` tinyint(1) NOT NULL DEFAULT '0',
+  `voided_by` int DEFAULT NULL,
+  `date_voided` datetime DEFAULT NULL,
+  `void_reason` varchar(255) DEFAULT NULL,
+  `uuid` char(38) NOT NULL,
+  `price_id` int DEFAULT NULL,
+  `payment_status` varchar(10) NOT NULL,
+  `service_id` int DEFAULT NULL,
+  `order_id` int DEFAULT NULL,
+  PRIMARY KEY (`bill_line_item_id`),
+  UNIQUE KEY `uuid` (`uuid`),
+  KEY `cashier_bill_line_item_bill_id_fk` (`bill_id`),
+  KEY `cashier_bill_line_item_creator_fk` (`creator`),
+  KEY `cashier_bill_line_item_changed_by_fk` (`changed_by`),
+  KEY `cashier_bill_line_item_voided_by_fk` (`voided_by`),
+  KEY `cashier_bill_line_item_item_id_fk` (`item_id`),
+  KEY `cashier_bill_line_item_service_id_fk` (`service_id`),
+  KEY `cashier_bill_line_item_order_id_fk` (`order_id`),
+  CONSTRAINT `cashier_bill_line_item_bill_id_fk` FOREIGN KEY (`bill_id`) REFERENCES `cashier_bill` (`bill_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `cashier_bill_line_item_changed_by_fk` FOREIGN KEY (`changed_by`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `cashier_bill_line_item_creator_fk` FOREIGN KEY (`creator`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `cashier_bill_line_item_item_id_fk` FOREIGN KEY (`item_id`) REFERENCES `stockmgmt_stock_item` (`stock_item_id`),
+  CONSTRAINT `cashier_bill_line_item_order_id_fk` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `cashier_bill_line_item_service_id_fk` FOREIGN KEY (`service_id`) REFERENCES `cashier_billable_service` (`service_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `cashier_bill_line_item_voided_by_fk` FOREIGN KEY (`voided_by`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
